@@ -43,7 +43,9 @@ void lcdInfoPanels(){
 			for (byte thisByte = 0; thisByte < 4; thisByte++) {
 			  // print the value of each byte of the IP address:
 			  LCD.print(Ethernet.localIP()[thisByte], DEC);
-			  LCD.print(".");           
+			if (thisByte <3 ){  
+                          LCD.print(".");           
+                        }
 			}
 			break;
 		case 4:
