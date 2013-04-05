@@ -18,17 +18,17 @@ enum ServerReturnState{
 #include <SPI.h>
 
 #define LCD_ENABLED 1
+#define Relais_ENABLED 1
 
 #ifdef LCD_ENABLED
-
-//#include <SoftwareSerial.h>
+#include <SoftwareSerial.h>
 #endif LCD_ENABLED
 
 #include <Ethernet.h>/*belegt pins 10,11,12,13*/
 #include <Time.h>
-#include <time.h>
+//#include <time.h>
 
-#include <MemoryFree.h>
+#include "MemoryFree.h"
 
 //DateStrings.cpp patchen mit const. für arduino 1.0
 
@@ -51,6 +51,22 @@ HardwareSerial LCD = Serial1;
 //Serial1 has pins 19 (RX) and 18 (TX)
 #endif LCD_ENABLED
 
+// Using one serial output for each of the two relais
+HardwareSerial RelaisOne = Serial2; // Serial2 has pins 17 (RX) 16 (TX)
+HardwareSerial RelaisTwo = Serial3; // Serial3 has pins ?? (RX) ?? (TX)
+
+// Define Commands for Relais
+// Main cmd will look like: 4 Bytes: (address|cmd=(set,ask)|err|errorcode)
+const byte ADDRONE = 0x23; // First relais
+const byte ADDRTWO = 0x42; // Second relais
+const byte SET = 0x12; //Command to set the relais
+const byte ASK = 0x21; //Command to ask the state of the relais
+const byte ERROR = 0x33; //error Code
+const byte EWRONGADD = 0x02;
+const byte ESHORTFB = 0x03;
+const byte EWRONGFB = 0x04;
+const byte EWRONGCOM = 0x05;
+const byte COMMANDLENGTH = 4;
 //Serial LCD()
 
 
@@ -96,7 +112,8 @@ int ampelRed = A2;
     int lastDisplayType = 0;
     unsigned long timeOfLastSwitch = 0;
     int sendStateNeeded = 0;
-    String stateString = String("     ");
+    String stateString = String("unknown");
+	String relaisState = String("unknown");
     
     
     unsigned long timeOfLastUntilChange = 0;
@@ -112,8 +129,8 @@ int ampelRed = A2;
     time_t timeOfLastPrintStuff = 0;
     unsigned long timeOfLastUntilDisplay = 0;
 
-
-
+	unsigned long answer = 0x00000001; // Answer from Relais
+	
 byte mac[] = {
   0x90, 0xA2, 0xda, 0x00, 0x1c, 0xe6 }; // Meine MAC von meinem Ethernetshield
  //My IP address: 10.18.10.250.
@@ -157,21 +174,24 @@ void setup() {
   
   // start the serial library:
   Serial.begin(9600);
-  Serial.println("Betaspace-Switch starting up.");
+  Serial.println("Mainframe-Switch starting up.");
+
+  // start relais serial
+  Serial2.begin(1200);
   
   #ifdef LCD_ENABLED
-  // Start LCD Output
-  //pinMode(LCDpin, OUTPUT);
-  //digitalWrite(LCDpin,HIGH);
-  LCD.begin(9600);
-  backlightOn();
-    clearLCD(); 
-  //selectLineOne();
-  goTo(0);
-  LCD.print("Betaspace");  
-  goTo(16);
-  //selectLineTwo();
-  LCD.print("  ...starting up");  
+	  // Start LCD Output
+	  //pinMode(LCDpin, OUTPUT);
+	  //digitalWrite(LCDpin,HIGH);
+	  LCD.begin(9600);
+	  backlightOn();
+		clearLCD(); 
+	  //selectLineOne();
+	  goTo(0);
+	  LCD.print("Mainframe");  
+	  goTo(16);
+	  //selectLineTwo();
+	  LCD.print("  ...starting up");  
   #endif LCD_ENABLED
   
   // start the Ethernet connection:
@@ -180,7 +200,7 @@ void setup() {
   while (dhcpSuccess == 0) {
     Serial.println("Failed to configure Ethernet using DHCP");
     #ifdef LCD_ENABLED
-    showCantConnect();
+		showCantConnect();
     #endif LCD_ENABLED
     dhcpSuccess = Ethernet.begin(mac);
     //Serial.println("Failed");
@@ -202,15 +222,12 @@ void setup() {
   
   //LCD-Print the IP-Adress from DHCP
   #ifdef LCD_ENABLED
-  showLocalIP();
+	showLocalIP();
   #endif LCD_ENABLED
   
-  delay(1000);
-    
+   delay(1000);
    getEpochFromServer();
-   
    Serial.println("DBG");
-   
    until=now();
    
    #ifdef LCD_ENABLED
@@ -224,12 +241,11 @@ void setup() {
 
 
     
-void loop(){
+void loop() {
 
-
-  static int loopCounter = 0;  
-  Serial.println("LoopStart " + String(loopCounter));
-
+  //static int loopCounter = 0;  
+  //Serial.println("LoopStart " + String(loopCounter));
+  Serial.println("LoopStart");
 
   
 #ifdef ENCODER
@@ -246,23 +262,20 @@ void loop(){
   
       //Serial.print("freeMemory()=");
       //Serial.println(freeMemory()); 
-      
-      
       //Serial.println(timeSinceLastSwitch,DEC);
-      
       
       /*
        * Statusdaten auf LCD ausgeben.
        */
         Serial.println("beforeInfo");
       #ifdef LCD_ENABLED  
-      lcdInfoPanels();
+		lcdInfoPanels();
       #endif LCD_ENABLED
         Serial.println("afterInfo");      
       
-      timeOfLastPrintStuff = now();
+	  timeOfLastPrintStuff = now();
       Serial.println(now(),DEC);
-    };
+    }
     
     
     // digitalRead the pins once and use these values throughout so that
@@ -284,8 +297,15 @@ void loop(){
         digitalWrite(ampelGreen ,HIGH);
         digitalWrite(ampelYellow,LOW );        
         digitalWrite(ampelRed   ,LOW );
-        
+
+		// TODO: some Realis on 
+		#ifdef Relais_ENABLED
+		//answer = 0x23234242;
+		//sendToRelais(Relais, SET);
+		// Reset timer!
+		#endif Relais_ENABLED
       }
+	  // Off (red)
       if (stateOfTheOnPin == HIGH &&  stateOfTheOffPin == LOW) {
         stateString = "off";
         sendStateNeeded = 1;
@@ -294,7 +314,17 @@ void loop(){
         digitalWrite(ampelGreen ,LOW );
         digitalWrite(ampelYellow,LOW );        
         digitalWrite(ampelRed   ,HIGH);
+
+		// TODO: some Realis off after delay of 30 min
+		
+		#ifdef Relais_ENABLED
+		//unsigned long timer = millis();
+		//if(millis()-timer > 300000 &&)
+		//sendToRelais(Relais, SET);
+		answer = 0x00000001;
+		#endif Relais_ENABLED
       }
+	  // Yellow
       if (stateOfTheOnPin == HIGH &&  stateOfTheOffPin == HIGH) {
         stateString = "unk";
         digitalWrite(ampelGreen ,LOW );
@@ -319,7 +349,6 @@ void loop(){
   
     if (sendStateNeeded > 0) {
         
-        
         Serial.println("Sending State...");        
         sendStateNeeded = sendPost( serverName, serverDir, "switch", "state="+stateString );
         
@@ -327,7 +356,7 @@ void loop(){
           sendStateNeeded = 0;
         }
         
-        if (sendStateNeeded == 0 ){
+        if (sendStateNeeded == 0){
           #ifdef LCD_ENABLED
           clearLCD();
           selectLineOne();
@@ -350,14 +379,23 @@ void loop(){
     }
  */
     //delay(1000);
-    
-      Serial.println("Loop End " + String(loopCounter));
-  loopCounter++;
 
-    
+	// TODO: Check if Realais are still alive every 5s
+	if(millis() % 5000 == 0) {
+		long answerOne = sendToRelais(RelaisOne, ASK);
+		long answerTwo = sendToRelais(RelaisTwo, ASK);
+
+		// Relais online
+		if(answer == 0x23232323) {
+			relaisState = "     online";
+		} 
+		// Relais offline
+		else {
+			Serial.println("Err: Relais dead!");	
+			relaisState =  "     offline";
+		}
+	}
+
+     //Serial.println("Loop End " + String(loopCounter));
+	 //loopCounter++;
 }
-
-
-
-
-
