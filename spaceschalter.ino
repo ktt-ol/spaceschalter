@@ -14,6 +14,9 @@ enum ServerReturnState{
 };
 */
 
+//Pre Shared Key
+#include "psk.h"
+
 //SPI is needed for ethernet
 #include <SPI.h>
 
@@ -243,13 +246,8 @@ void setup() {
     
 void loop() {
 
-  //static int loopCounter = 0;  
-  //Serial.println("LoopStart " + String(loopCounter));
-  Serial.println("LoopStart");
-
   
 #ifdef ENCODER
-  //TODO check refactored function
   checkEncoder()
 #endif ENCODER
 
@@ -298,7 +296,7 @@ void loop() {
         digitalWrite(ampelYellow,LOW );        
         digitalWrite(ampelRed   ,LOW );
 
-		// TODO: some Realis on 
+		// TODO: some Relais on 
 		#ifdef Relais_ENABLED
 		//answer = 0x23234242;
 		//sendToRelais(Relais, SET);
@@ -326,11 +324,13 @@ void loop() {
       }
 	  // Yellow
       if (stateOfTheOnPin == HIGH &&  stateOfTheOffPin == HIGH) {
-        stateString = "unk";
+        stateString = "closing";
         digitalWrite(ampelGreen ,LOW );
         digitalWrite(ampelYellow,HIGH);        
         digitalWrite(ampelRed   ,LOW );
-        sendStateNeeded = 0;        
+          sendStateNeeded = 0;
+          //sendStateNeeded = 1;
+          //timeOfLastSwitch = now();        
       }
         Serial.println("NewState:" + stateString);      
 
@@ -350,7 +350,7 @@ void loop() {
     if (sendStateNeeded > 0) {
         
         Serial.println("Sending State...");        
-        sendStateNeeded = sendPost( serverName, serverDir, "switch", "state="+stateString );
+        sendStateNeeded = sendPost( serverName, serverDir, "switch", "state="+stateString+"&psk="+psk );
         
         if (sendStateNeeded == 3){ // Schalter steht bereits auf Eingabe.
           sendStateNeeded = 0;
@@ -396,6 +396,4 @@ void loop() {
 		}
 	}
 
-     //Serial.println("Loop End " + String(loopCounter));
-	 //loopCounter++;
 }
